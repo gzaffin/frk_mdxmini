@@ -25,6 +25,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+
+#ifdef USE_ICONV
+#include <iconv.h>
+
+#endif // USE_ICONV
 
 
 #include "mdxmini.h"
@@ -35,7 +41,7 @@
 #include "nlg.h"
 NLGCTX *nlgctx;
 
-#endif
+#endif // USE_NLG
 
 
 /* ------------------------------------------------------------------ */
@@ -44,11 +50,6 @@ NLGCTX *nlgctx;
 static PDX_DATA* _get_pdx(MDX_DATA* mdx, char* mdxpath);
 static int self_construct(songdata* songdata);
 static void self_destroy(songdata* songdata);
-
-static void usage( void );
-static void display_version( void );
-
-// static char mdx_path[1024];
 
 /* ------------------------------------------------------------------ */
 // static char *command_name;
@@ -268,7 +269,6 @@ int mdx_calc_sample(t_mdxmini *data, short *buf, int buffer_size)
                 int tempo_us = (1000 * 1024 * (256 - data->nlg_tempo)) / 4000;
                 WriteNLG_CTC(nlgctx, CMD_CTC0, 4); // 4 * 64 = 256us
                 WriteNLG_CTC(nlgctx, CMD_CTC3, (tempo_us / 256));
-
             }
             WriteNLG_IRQ(nlgctx);
 #endif
@@ -458,50 +458,241 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
   PDX_DATA* pdx = NULL;
 
   mdx->pdx_enable = FLAG_FALSE;
-  if ( mdx->haspdx == FLAG_FALSE ) goto no_pdx_file;
+  if ( mdx->haspdx == FLAG_FALSE )
+  {
+    goto no_pdx_file;
+  }
+  if ( NULL == mdx->pdx_name )
+  {
+    goto no_pdx_file;
+  }
+  int pdx_name_len = 0;
+  while ('\0' != mdx->pdx_name[pdx_name_len])
+  {
+    pdx_name_len++;
+  }
+  char pdx_iconv_name[1024] = { 0, };
 
-   
+#ifdef USE_ICONV
+
+            if (0 == conv_with_iconv(mdx->pdx_name, pdx_iconv_name, "SHIFT-JIS"))
+            {
+
+#ifdef DEBUG
+                if ('\0' != pdx_iconv_name[0])
+                {
+
+                    printf("PDX File SHIFT-JIS : %s\n", pdx_iconv_name);
+
+                }
+
+#endif // DEBUG
+            }
+            else if (0 == conv_with_iconv(mdx->pdx_name, pdx_iconv_name, "CP932"))
+            {
+
+#ifdef DEBUG
+                if ('\0' != pdx_iconv_name[0])
+                {
+
+                    printf("PDX File CP932 : %s\n", pdx_iconv_name);
+
+                }
+
+#endif // DEBUG
+            }
+            else
+            {
+                if ('\0' != mdx->pdx_name[0])
+                {
+                    /*sjis_to_utf8(mdx->pdx_name, (pdx_name_len + 1), pdx_iconv_name, 1024);*/
+                    strncpy(pdx_iconv_name, mdx->pdx_name, 1023);
+
+#ifdef DEBUG
+
+                    printf("PDX File sjis_to_utf8 : %s\n", pdx_iconv_name);
+
+#endif // DEBUG
+                }
+            }
+
+#else // USE_ICONV
+  /*sjis_to_utf8(mdx->pdx_name, (pdx_name_len + 1), pdx_iconv_name, 1024);*/
+  strncpy(pdx_iconv_name, mdx->pdx_name, 1023);
+
+//#ifdef DEBUG
+
+  printf("PDX File sjis_to_utf8 : %s\n", pdx_iconv_name);
+
+//#endif // DEBUG
+
+#endif // USE_ICONV
+
   /* mdx file path directory */
-  
+
   memset(buf, 0, PATH_BUF_SIZE);
   strncpy( buf, mdxpath, PATH_BUF_SIZE-1 );
-  if ( (a=strrchr( buf, '/' )) != NULL ) 
+#ifdef _MSC_VER
+  if ( (a=strrchr( buf, '\\' )) != NULL )
+
+#else // _MSC_VER
+  if ( (a=strrchr( buf, '/' )) != NULL )
+
+#endif // _MSC_VER
   {
     *(a+1)='\0';
   }
   else
-    buf[0] = 0;
-  
-  strcat( buf, mdx->pdx_name );
-  if ( (pdx=_open_pdx( buf )) == NULL ) 
   {
-    // specified pdx directory
-	strcpy( buf, mdx->pdx_dir );
-	int len = (int)strlen( buf );
-	
-	if (len > 0 && buf [ len - 1 ] != '/' )
-			strcat( buf, "/" );
-	
-	strcat( buf, mdx->pdx_name );
-	if ((pdx=_open_pdx( buf )) != NULL )
-		goto get_pdx_file;
+    buf[0] = 0;
+  }
+
+  a=strrchr( pdx_iconv_name, '.' );
+  if (a != NULL)
+  {
+    if ( ((toupper(a[1])) == 'P') && ((toupper(a[2])) == 'D') && ((toupper(a[3])) == 'X') && ((a[4]) == '\0') )
+    {
+      strcat( buf, pdx_iconv_name );
+    }
   }
   else
+  {
+    strcat( buf, pdx_iconv_name );
+    strcat( buf, ".PDX" );
+  }
+//#ifdef DEBUG
+
+  printf("PDX File : %s\n", buf);
+
+//#endif // DEBUG
+
+  pdx=_open_pdx( buf );
+
+  if (NULL == pdx)
+  {
+    a=strrchr( buf, '.' );
+    if ( ((toupper(a[1])) == 'P') && ((toupper(a[2])) == 'D') && ((toupper(a[3])) == 'X') && ((a[4]) == '\0') )
+    {
+      a[1] = 'p';
+      a[2] = 'd';
+      a[3] = 'x';
+    }
+    else
+    {
+      goto no_pdx_file;
+    }
+ 
+//#ifdef DEBUG
+
+    printf("PDX File : %s\n", buf);
+
+//#endif // DEBUG
+
+    pdx=_open_pdx( buf );
+    if ( NULL != pdx )
+    {
+      goto get_pdx_file;
+    }
+  }
+  else
+  {
     goto get_pdx_file;
-  
+  }
 
-no_pdx_file:
-  goto unget_pdx_file;
-    
-unget_pdx_file:
-// tempo could be changed in a pcm track
-  mdx->haspdx = FLAG_FALSE;
-  mdx->pdx_enable = FLAG_TRUE;
-  return NULL;
+  if (NULL == pdx)
+  {
+    buf[0] = '\0';
+    // specified pdx directory
+    strcpy( buf, mdx->pdx_dir );
 
-get_pdx_file:
-  mdx->pdx_enable = FLAG_TRUE;
-  return pdx;
+    int len = (int)strlen( buf );
+#ifdef _MSC_VER
+    if (len > 0 && buf [ len - 1 ] != '\\' )
+    {
+      strcat( buf, "\\" );
+    }
+
+#else // _MSC_VER
+    if (len > 0 && buf [ len - 1 ] != '/' )
+    {
+      strcat( buf, "/" );
+    }
+
+#endif // _MSC_VER
+    a=strrchr( pdx_iconv_name, '.' );
+    if (a != NULL)
+    {
+      if ( ((toupper(a[1])) == 'P') && ((toupper(a[2])) == 'D') && ((toupper(a[3])) == 'X') && ((a[4]) == '\0') )
+      {
+        strcat( buf, pdx_iconv_name );
+      }
+    }
+    else
+    {
+      strcat( buf, pdx_iconv_name );
+      strcat( buf, ".PDX" );
+    }
+
+//#ifdef DEBUG
+
+    printf("PDX File : %s\n", buf);
+
+//#endif // DEBUG
+
+    pdx=_open_pdx( buf );
+
+    if ( NULL != pdx )
+    {
+      goto get_pdx_file;
+    }
+    else
+    {
+      a=strrchr( buf, '.' );
+      if ( ((toupper(a[1])) == 'P') && ((toupper(a[2])) == 'D') && ((toupper(a[3])) == 'X') && ((a[4]) == '\0') )
+      {
+          a[1] = 'p';
+          a[2] = 'd';
+          a[3] = 'x';
+      }
+      else
+      {
+          goto no_pdx_file;
+      }
+ 
+//#ifdef DEBUG
+
+      printf("PDX File : %s\n", buf);
+
+//#endif // DEBUG
+
+      pdx=_open_pdx( buf );
+      if ( NULL != pdx )
+      {
+          goto get_pdx_file;
+      }
+      else
+      {
+          goto no_pdx_file;
+      }
+    }
+  }
+  else
+  {
+    goto get_pdx_file;
+  }
+
+  no_pdx_file:
+    goto unget_pdx_file;
+
+  unget_pdx_file:
+    // tempo could be changed in a pcm track
+    mdx->haspdx = FLAG_FALSE;
+    mdx->pdx_enable = FLAG_TRUE;
+    return NULL;
+
+  get_pdx_file:
+    mdx->pdx_enable = FLAG_TRUE;
+    return pdx;
 }
 
 void*
@@ -596,3 +787,44 @@ self_destroy(songdata *songdata)
     songdata->mdx2151 = NULL;
   }
 }
+
+#ifdef USE_ICONV
+/*
+// conv_with_iconv
+*/
+
+int conv_with_iconv(char *origin, char *locale, const char *fromcode)
+{
+    iconv_t icd = iconv_open("UTF-8", fromcode);
+
+    if (icd != (iconv_t)(-1))
+    {
+        char *srcstr = origin;
+        char *deststr = locale;
+
+        size_t srclen = (NULL != srcstr) ? strlen(srcstr) + 1 : 0;
+        size_t destlen = 1024;
+        size_t wrtBytes = 0;
+
+        (void)iconv(icd, NULL, NULL, NULL, NULL); // reset conversion state
+
+        wrtBytes = iconv(icd, &srcstr, &srclen, &deststr, &destlen);
+        if (wrtBytes == (size_t)-1)
+        {
+            /*printf("error iconv\n");*/
+            return -1;
+        }
+
+        iconv_close(icd);
+    }
+    else
+    {
+        /*printf("error iconv_open\n");*/
+        return -1;
+    }
+
+    return 0;
+}
+
+#endif // USE_ICONV
+

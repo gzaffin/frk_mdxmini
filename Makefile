@@ -7,6 +7,14 @@ W32 = 1
 export W32
 endif
 
+ifeq ($(DEBUG),1)
+MODE = _debug
+endif
+
+LIBS := 
+SLIBS := 
+CFLAGS := -Isrc
+
 ifeq ($(W32),1)
 
 include mak/w32.mak
@@ -18,37 +26,35 @@ include mak/general.mak
 
 endif
 
-ifeq ($(DEBUG),1)
-MODE = _debug
-endif
+#
+# SDL2 stuff
+#
+
+SDL2_CONFIG = sdl2-config
+
+LIBS += `$(SDL2_CONFIG) --libs`
+SLIBS += `$(SDL2_CONFIG) --static-libs`
+CFLAGS += `$(SDL2_CONFIG) --cflags`
 
 TARGET = mdxplay$(MODE)$(EXE_SFX)
 
-CFLAGS += -Isrc
-
-LIBS += $(SDL_LIBS)
-SLIBS += $(SDL_SLIBS)
-CFLAGS += $(SDL_CFLAGS)
-
-
 #
-# definations for packing
+# definitions for packing
 #
 TITLE = mdxmini
 
-FILES = Makefile Makefile.lib Makefile.psplib $(TITLE).txt 
-FILES += fade.h sdlplay.c 
+FILES = Makefile Makefile.lib Makefile.psplib $(TITLE).txt
+FILES += fade.h sdlplay.c
 FILES += src/nlg.c src/nlg.h
 FILES_ORG = COPYING AUTHORS
 LIB = $(OBJDIR)/lib$(TITLE).a
 
-LIBS += $(LIB)
+LIBS += $(LIB) -lm
 
 ZIPSRC = $(TITLE)`date +"%y%m%d"`.zip
 TOUCH = touch -t `date +"%m%d0000"`
 
-
-MDXPLAY_OBJS = sdlplay.o nlg.o 
+MDXPLAY_OBJS = sdlplay.o nlg.o
 OBJS = $(addprefix $(OBJDIR)/,$(MDXPLAY_OBJS))
 
 SRCDIR = src
@@ -59,7 +65,7 @@ MKLIB = mklib
 NLGTEST = nlgtest
 
 #
-#
+# targets
 #
 
 all : $(OBJDIR) $(MKLIB) $(TARGET)
@@ -68,7 +74,7 @@ $(OBJDIR):
 	mkdir $(OBJDIR)
 
 $(TARGET) : $(OBJS) $(LIB)
-	$(LD) $(LFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(LD) $(LFLAGS) $(OBJS) $(LIBS) -o $@
 
 $(LIB): $(MKLIB)
 
@@ -84,18 +90,17 @@ $(OBJDIR)/sdlplay.o: sdlplay.c
 clean:
 	rm -rf $(OBJDIR)
 	rm -f $(TARGET) $(NLGTEST)
-	
+
 release:
 	strip $(TARGET)
 
 test:
-	gcc -o $(NLGTEST) src/nlg.c -DNLG_TEST
+	$(CC) -o $(NLGTEST) src/nlg.c -DNLG_TEST
 
 dist :
 	find . -name ".DS_Store" -exec rm -f {} \;
 	find $(FILES) $(SRCDIR) $(MAKDIR) -exec $(TOUCH) {} \;
-	
+
 	rm -f $(ZIPSRC)
 	zip -r $(ZIPSRC) $(MAKDIR) $(SRCDIR) $(FILES) $(FILES_ORG)
 
-	
