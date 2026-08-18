@@ -32,6 +32,9 @@
 
 #endif // USE_ICONV
 
+#include "sjis.h"
+#include "utf8.h"
+
 
 #include "mdxmini.h"
 #include "class.h"
@@ -244,11 +247,6 @@ int mdx_frame_length ( t_mdxmini *data )
 	return 0;
 }
 
-void mdx_make_buffer( t_mdxmini *data, short *buf , int buffer_size )
-{
-	mdx_parse_mml_ym2151_make_samples(buf , buffer_size, data->songdata);
-}
-
 int mdx_calc_sample(t_mdxmini *data, short *buf, int buffer_size)
 {
 	int s_pos;
@@ -338,7 +336,20 @@ int mdx_calc_log(t_mdxmini *data, short *buf, int buffer_size)
 	return next;
 }
 
-
+void mdx_get_pdxfilename( t_mdxmini *data, char *title )
+{
+    if (NULL != title)
+    {
+        if (data->mdx->haspdx)
+        {
+            strcpy(title,data->mdx->pdx_name);
+        }
+        else
+        {
+            title[0] = '\0';
+        }
+    }
+}
 
 void mdx_get_title( t_mdxmini *data, char *title )
 {
@@ -458,11 +469,11 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
   PDX_DATA* pdx = NULL;
 
   mdx->pdx_enable = FLAG_FALSE;
-  if ( mdx->haspdx == FLAG_FALSE )
+  if (FLAG_FALSE == mdx->haspdx)
   {
     goto no_pdx_file;
   }
-  if ( NULL == mdx->pdx_name )
+  if ('\0' == mdx->pdx_name[0])
   {
     goto no_pdx_file;
   }
@@ -475,20 +486,7 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
 
 #ifdef USE_ICONV
 
-            if (0 == conv_with_iconv(mdx->pdx_name, pdx_iconv_name, "SHIFT-JIS"))
-            {
-
-#ifdef DEBUG
-                if ('\0' != pdx_iconv_name[0])
-                {
-
-                    printf("PDX File SHIFT-JIS : %s\n", pdx_iconv_name);
-
-                }
-
-#endif // DEBUG
-            }
-            else if (0 == conv_with_iconv(mdx->pdx_name, pdx_iconv_name, "CP932"))
+            if (0 == conv_with_iconv(mdx->pdx_name, pdx_iconv_name, "CP932"))
             {
 
 #ifdef DEBUG
@@ -503,28 +501,17 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
             }
             else
             {
-                if ('\0' != mdx->pdx_name[0])
-                {
-                    /*sjis_to_utf8(mdx->pdx_name, (pdx_name_len + 1), pdx_iconv_name, 1024);*/
-                    strncpy(pdx_iconv_name, mdx->pdx_name, 1023);
-
-#ifdef DEBUG
-
-                    printf("PDX File sjis_to_utf8 : %s\n", pdx_iconv_name);
-
-#endif // DEBUG
-                }
+                ;
             }
 
 #else // USE_ICONV
-  /*sjis_to_utf8(mdx->pdx_name, (pdx_name_len + 1), pdx_iconv_name, 1024);*/
-  strncpy(pdx_iconv_name, mdx->pdx_name, 1023);
+  sjis_to_utf8(mdx->pdx_name, (pdx_name_len + 1), pdx_iconv_name, 1024);
 
-//#ifdef DEBUG
+#ifdef DEBUG
 
   printf("PDX File sjis_to_utf8 : %s\n", pdx_iconv_name);
 
-//#endif // DEBUG
+#endif // DEBUG
 
 #endif // USE_ICONV
 

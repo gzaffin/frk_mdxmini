@@ -2,6 +2,7 @@ LIB = $(OBJDIR)/libmdxmini.a
 
 OBJFILES =  mdxmini.o mdx2151.o mdxmml_ym2151.o 
 OBJFILES += pdxfile.o mdxfile.o pcm8.o ym2151.o nlg.o
+OBJFILES += sjis.o sjis_unicode.o utf8.o
 
 CFLAGS += -DUSE_NLG -I.
 

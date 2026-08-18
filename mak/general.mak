@@ -15,6 +15,6 @@ CFLAGS += -O3
 OBJDIR = obj
 endif
 
-# iconv
-CFLAGS += -DUSE_ICONV
+# iconv is not used
+#CFLAGS += -DUSE_ICONV
 

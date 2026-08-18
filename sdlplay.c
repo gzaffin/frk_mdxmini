@@ -10,10 +10,17 @@
 
 #endif // USE_ICONV
 
+#include "sjis.h"
+#include "utf8.h"
 
 #include "mdxmini.h"
 
 #include "nlg.h"
+
+#ifdef DEBUG
+#include <stdio.h>
+
+#endif // DEBUG
 
 extern NLGCTX *nlgctx;
 
@@ -64,7 +71,7 @@ static int audio_poll_event(void);
 #ifdef USE_ICONV
 extern int conv_with_iconv(char *origin, char *locale, const char *fromcode);
 
-#endif
+#endif // USE_ICONV
 static void audio_disp_title(t_mdxmini *data);
 //static int split_dir(const char *file , char *dir);
 static void audio_loop(t_mdxmini *data, int freq, int len);
@@ -226,11 +233,7 @@ static void audio_disp_title(t_mdxmini *data)
 #ifdef USE_ICONV
     if ('\0' != title_orig[0])
     {
-        if (0 == conv_with_iconv(title_orig, title_lcl, "SHIFT-JIS"))
-        {
-            printf("SHIFT-JIS\n");
-        }
-        else if (0 == conv_with_iconv(title_orig, title_lcl, "CP932"))
+        if (0 == conv_with_iconv(title_orig, title_lcl, "CP932"))
         {
             printf("CP932\n");
         }
@@ -244,7 +247,7 @@ static void audio_disp_title(t_mdxmini *data)
 #else // USE_ICONV
     if ('\0' != title_orig[0])
     {
-        strncpy(title_lcl, title_orig, title_orig_len);
+        sjis_to_utf8(title_orig, (title_orig_len + 1), title_lcl, 1024);
     }
 
 #endif // USE_ICONV
@@ -630,6 +633,69 @@ int audio_main(int argc, char *argv[])
             CloseNLG(nlgctx);
             nlgctx = NULL;
             return 0;
+        }
+        if (mini.mdx->haspdx)
+        {
+            char pdx_lcl_name[1024] = { 0, };
+            mdx_get_pdxfilename( &mini, pdx_lcl_name );
+            char pdx_lcl_iconv_name[1024] = { 0, };
+            int pdx_lcl_name_len = 0;
+            while ('\0' != pdx_lcl_name[pdx_lcl_name_len])
+            {
+                pdx_lcl_name_len++;
+            }
+
+#ifdef USE_ICONV
+
+            if (0 == conv_with_iconv(pdx_lcl_name, pdx_lcl_iconv_name, "SHIFT-JIS"))
+            {
+                if ('\0' != pdx_lcl_iconv_name[0])
+                {
+                    printf("PDX File : %s\n", pdx_lcl_iconv_name);
+                }
+            }
+            else if (0 == conv_with_iconv(pdx_lcl_name, pdx_lcl_iconv_name, "CP932"))
+            {
+                if ('\0' != pdx_lcl_iconv_name[0])
+                {
+                    printf("PDX File : %s\n", pdx_lcl_iconv_name);
+                }
+            }
+            else
+            {
+                ;
+            }
+
+#else // USE_ICONV
+            if ('\0' != pdx_lcl_name[0])
+            {
+                sjis_to_utf8(pdx_lcl_name, (pdx_lcl_name_len + 1), pdx_lcl_iconv_name, 1024);
+                printf("PDX File : %s\n", pdx_lcl_iconv_name);
+            }
+
+#endif // USE_ICONV
+        }
+        else
+        {
+          if (NULL == mini.pdx)
+          {
+              char pdx_lcl_name[1024];
+              pdx_lcl_name[0] = '\0';
+              mini.mdx->haspdx = 1; /* forced value trying to print not found PDX */
+              mdx_get_pdxfilename( &mini, pdx_lcl_name );
+              char pdx_lcl_iconv_name[1024] = { 0, };
+              int pdx_lcl_name_len = 0;
+              while ('\0' != pdx_lcl_name[pdx_lcl_name_len])
+              {
+                  pdx_lcl_name_len++;
+              }
+              if ('\0' != pdx_lcl_name[0])
+              {
+                  sjis_to_utf8(pdx_lcl_name, (pdx_lcl_name_len + 1), pdx_lcl_iconv_name, 1024);
+                  printf("PDX File : %s NOT FOUND\n", pdx_lcl_iconv_name);
+              }
+              mini.mdx->haspdx = 0; /* restored value after use */
+          }
         }
 
         if (nosound || wavfile)
