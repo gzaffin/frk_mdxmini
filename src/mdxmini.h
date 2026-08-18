@@ -93,6 +93,14 @@ int  mdx_calc_sample(t_mdxmini *data, short *buf, int buffer_size);
 int  mdx_calc_log(t_mdxmini *data, short *buf, int buffer_size);
 
 /**
+ * \brief Copies the PDX file name from the passed t_mdxmini struct into the provided string pointer.
+ *        The normal encoding of PDX file name is Shift-JIS, but this can contain data in any arbitrary encoding.
+ *
+ * \param data a t_mdxmini struct representing an open song.
+ * \param title the destination string.
+ */
+void  mdx_get_pdxfilename(t_mdxmini *data, char *title);
+/**
  * \brief Copies the title from the song loaded in the passed t_mdxmini struct into the provided string pointer.
  *        The normal encoding of MDX songs is Shift-JIS, but this can contain data in any arbitrary encoding.
  *
