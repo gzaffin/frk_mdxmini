@@ -35,24 +35,25 @@
 #include "sjis.h"
 #include "utf8.h"
 
-
 #include "mdxmini.h"
 #include "class.h"
 
 #ifdef USE_NLG
-
 #include "nlg.h"
 NLGCTX *nlgctx;
 
 #endif // USE_NLG
 
+#if defined __GNUC__
+#include <wchar.h>
+#include <dirent.h>
+#include <locale.h>
+
+#endif // defined __GNUC__
+
 
 /* ------------------------------------------------------------------ */
 #define PATH_BUF_SIZE 1024
-
-static PDX_DATA* _get_pdx(MDX_DATA* mdx, char* mdxpath);
-static int self_construct(songdata* songdata);
-static void self_destroy(songdata* songdata);
 
 /* ------------------------------------------------------------------ */
 // static char *command_name;
@@ -87,9 +88,132 @@ static float reverb_width;
 static float reverb_dry;
 static float reverb_wet;
 
-
+/* ------------------------------------------------------------------ */
 extern void ym2151_set_logging( int flag, songdata * );
 
+/* ------------------------------------------------------------------ */
+static PDX_DATA* _get_pdx(MDX_DATA* mdx, char* mdxpath);
+static int self_construct(songdata* songdata);
+static void self_destroy(songdata* songdata);
+
+#if defined __GNUC__
+int find_in_folder(char * fileString, char * folderString);
+int compare_utf8_code_point_by_code_point(const char *str1, const char *str2);
+
+int compare_utf8_code_point_by_code_point(const char *str1, const char *str2) {
+    mbstate_t state1 = { 0, };
+    mbstate_t state2 = { 0, };
+
+    wchar_t wc1, wc2;
+    size_t len1, len2;
+
+    const char *p1 = str1;
+    const char *p2 = str2;
+
+    while (1) {
+        len1 = mbrtowc(&wc1, p1, MB_CUR_MAX, &state1);
+        len2 = mbrtowc(&wc2, p2, MB_CUR_MAX, &state2);
+
+        if ((len1 == (size_t)-1) || (len1 == (size_t)-2) \
+                || \
+                (len2 == (size_t)-1) || (len2 == (size_t)-2)) {
+            fprintf(stderr, "Error: UTF-8 string is not valid.\n");
+            return -2;
+        }
+
+        if ((len1 == 0) && (len2 == 0)) {
+            return 0; /* strings match */
+        }
+
+        wchar_t wc1_second_opinion = wc1;
+        if ((wc1_second_opinion >= 65) && (wc1_second_opinion <= 90)) {
+            wc1_second_opinion += 32;
+        }
+        if ((wc1_second_opinion >= 97) && (wc1_second_opinion <= 122)) {
+            wc1_second_opinion -= 32;
+        }
+        if ((wc1 != wc2) && (wc1_second_opinion != wc2)) {
+            return (wc1 < wc2) ? -1 : 1;
+        }
+
+        /* pointer moves */
+        p1 += len1;
+        p2 += len2;
+    }
+}
+
+int find_in_folder(char * fileString, char * folderString) {
+    setlocale(LC_ALL, "");
+
+    const char *s1 = fileString;
+    const char *s2 = NULL;
+
+    DIR *folder_dir = opendir(folderString);
+
+    if (NULL == folder_dir) {
+#ifdef DEBUG
+        fprintf(stderr, "Error: folder %s cannot be opened.\n", folderString);
+
+#endif // defined(DEBUG)
+
+        return 2;
+    }
+
+    struct dirent *file_in_folder;
+
+#ifdef DEBUG
+    printf("In folder %s :\n", folderString);
+    printf(">>>\n");
+
+    while ((file_in_folder = readdir(folder_dir)) != NULL) {
+        printf("%s\n", file_in_folder->d_name);
+    }
+
+    closedir(folder_dir);
+
+    folder_dir = opendir(folderString);
+
+#endif // defined(DEBUG)
+
+    int chk_result;
+    while ((file_in_folder = readdir(folder_dir)) != NULL) {
+        s2 = (const char *)file_in_folder->d_name;
+
+        chk_result = compare_utf8_code_point_by_code_point(s1, s2);
+
+        if (chk_result == 0) {
+            int s2_len = 0;
+            while ('\0' != s2[s2_len])
+            {
+                s2_len++;
+            }
+            strncat( folderString, s2, PATH_BUF_SIZE-(s2_len+1) );
+#ifdef DEBUG
+            printf("String %s (%s) matches %s .\n", s2, folderString, s1);
+
+#endif // defined(DEBUG)
+
+            break;
+        } else if (chk_result < 0) {
+#ifdef DEBUG
+            printf("First string %s is before second string %s .\n", s1, s2);
+
+#endif // defined(DEBUG)
+
+        } else {
+#ifdef DEBUG
+            printf("First string %s is after second string %s .\n", s1, s2);
+
+#endif // defined(DEBUG)
+
+        }
+    }
+
+    closedir(folder_dir);
+
+    return chk_result;
+}
+#endif // defined __GNUC__
 
 /* ------------------------------------------------------------------ */
 
@@ -137,14 +261,14 @@ int mdx_open( t_mdxmini *data, char *filename , char *pcmdir )
     /* load mdx file */
 
     data->mdx = mdx_open_mdx( filename );
-    if ( !data->mdx ) 
+    if ( !data->mdx )
 		return -1;
-		
+
 	mdx = data->mdx;
-	
+
 	if ( pcmdir )
 		strcpy(mdx->pdx_dir , pcmdir );
-	
+
 
     mdx->is_use_pcm8         = no_pdx      == FLAG_TRUE ? FLAG_FALSE:FLAG_TRUE;
     mdx->is_use_fm           = no_fm       == FLAG_TRUE ? FLAG_FALSE:FLAG_TRUE;
@@ -174,14 +298,14 @@ int mdx_open( t_mdxmini *data, char *filename , char *pcmdir )
     mdx->reverb_wet          = reverb_wet;
 
     mdx->is_output_to_stdout_in_wav = is_output_to_stdout_in_wav;
-    
+
     ym2151_set_logging(1, data->songdata);
 
     /* voice data load */
 
     if ( mdx_get_voice_parameter( mdx ) != 0 )
 		return -1;
-	
+
     /* load pdx data */
     pdx = data->pdx = _get_pdx( mdx, filename );
 
@@ -189,7 +313,7 @@ int mdx_open( t_mdxmini *data, char *filename , char *pcmdir )
 
 	if (!data->self)
 			return -1;
-			
+
 	data->samples = 0;
 	data->channels = pcm8_get_output_channels(data->songdata);
 
@@ -215,7 +339,7 @@ void mdx_disp_info(t_mdxmini *data)
 {
     /* output Title, etc... */
 
-    if ( data->mdx->is_output_titles == FLAG_TRUE ) 
+    if ( data->mdx->is_output_titles == FLAG_TRUE )
 	{
       mdx_output_titles( data->mdx );
     }
@@ -251,10 +375,10 @@ int mdx_calc_sample(t_mdxmini *data, short *buf, int buffer_size)
 {
 	int s_pos;
 	int next,frame;
-	
+
 	next = 1;
 	s_pos = 0;
-	
+
 	do
 	{
 		if (!data->samples)
@@ -274,20 +398,20 @@ int mdx_calc_sample(t_mdxmini *data, short *buf, int buffer_size)
 			frame = mdx_frame_length(data);
 			data->samples = (data->mdx->dsp_speed * frame)/1000000;
 		}
-        
+
         int calc_len = data->samples;
-        
+
 		if (calc_len + s_pos >= buffer_size)
             calc_len = buffer_size - s_pos;
-        
+
         mdx_parse_mml_ym2151_make_samples(
                 buf + (s_pos * data->channels),
                 calc_len,
                 data->songdata);
-			
+
         data->samples -= calc_len;
         s_pos += calc_len;
-		
+
 	}while(s_pos < buffer_size);
 
 	return next;
@@ -297,10 +421,10 @@ int mdx_calc_log(t_mdxmini *data, short *buf, int buffer_size)
 {
 	int s_pos;
 	int next,frame;
-	
+
 	next = 1;
 	s_pos = 0;
-	
+
 	do
 	{
 		if (!data->samples)
@@ -309,11 +433,11 @@ int mdx_calc_log(t_mdxmini *data, short *buf, int buffer_size)
             if (data->nlg_tempo != data->mdx->tempo)
             {
                 data->nlg_tempo = data->mdx->tempo;
-                
+
                 int tempo_us = (1000 * 1024 * (256 - data->nlg_tempo)) / 4000;
                 WriteNLG_CTC(nlgctx, CMD_CTC0, 4); // 4 * 64 = 256us
                 WriteNLG_CTC(nlgctx, CMD_CTC3, (tempo_us / 256));
-                
+
             }
             WriteNLG_IRQ(nlgctx);
 #endif
@@ -321,18 +445,18 @@ int mdx_calc_log(t_mdxmini *data, short *buf, int buffer_size)
 			frame = mdx_frame_length(data);
 			data->samples = (data->mdx->dsp_speed * frame)/1000000;
 		}
-        
+
         int calc_len = data->samples;
-        
+
 		if (calc_len + s_pos >= buffer_size)
             calc_len = buffer_size - s_pos;
-        
+
         data->samples -= calc_len;
         s_pos += calc_len;
-        
-		
+
+
 	}while(s_pos < buffer_size);
-    
+
 	return next;
 }
 
@@ -373,7 +497,7 @@ int  mdx_get_tracks ( t_mdxmini *data )
 void mdx_get_current_notes ( t_mdxmini *data , int *notes , int len )
 {
 	int i;
-	
+
 	for ( i = 0; i < len; i++ )
 	{
 		notes[i] = data->mdx->track[i].note;
@@ -383,10 +507,10 @@ void mdx_get_current_notes ( t_mdxmini *data , int *notes , int len )
 void mdx_close(t_mdxmini *data)
 {
     /* one playing finished */
-	
+
 	if (data->self)
 		mdx_parse_mml_ym2151_async_finalize(data->songdata);
-    
+
     mdx_close_pdx( data->pdx );
     mdx_close_mdx( data->mdx );
 
@@ -406,12 +530,12 @@ int  mdx_get_buffer_size ( t_mdxmini *data )
 /* pdx loading */
 
 static unsigned char*
-_load_pdx_data(char* name, long* out_length) 
+_load_pdx_data(char* name, long* out_length)
 {
   int len;
   FILE *fp;
   unsigned char *buf = NULL;
-  
+
   fp = fopen(name,"rb");
 
   if (!fp)
@@ -420,7 +544,7 @@ _load_pdx_data(char* name, long* out_length)
   fseek(fp, 0, SEEK_END);
   len = (int)ftell(fp);
   fseek(fp, 0, SEEK_SET);
-  
+
   buf = (unsigned char *)malloc(sizeof(unsigned char) * len);
   if ( !buf ) {
     goto error_end;
@@ -431,9 +555,9 @@ _load_pdx_data(char* name, long* out_length)
     goto error_end;
   }
   fclose(fp);
-  
+
   *out_length  = len;
-  
+
   return buf;
 
 error_end:
@@ -517,7 +641,7 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
 
   /* mdx file path directory */
 
-  memset(buf, 0, PATH_BUF_SIZE);
+  buf[0] = '\0';
   strncpy( buf, mdxpath, PATH_BUF_SIZE-1 );
 #ifdef _MSC_VER
   if ( (a=strrchr( buf, '\\' )) != NULL )
@@ -547,18 +671,18 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
   }
   else
   {
+    strcat( pdx_iconv_name, ".PDX" );
     strcat( buf, pdx_iconv_name );
-    strcat( buf, ".PDX" );
   }
-//#ifdef DEBUG
+#ifdef DEBUG
 
+  printf("PDX File : %s\n", pdx_iconv_name);
   printf("PDX File : %s\n", buf);
 
-//#endif // DEBUG
+#endif // DEBUG
 
   pdx=_open_pdx( buf );
-
-  if (NULL == pdx)
+  if ( NULL == pdx )
   {
     a=strrchr( buf, '.' );
     if ( (a != NULL) && ((toupper(a[1])) == 'P') && ((toupper(a[2])) == 'D') && ((toupper(a[3])) == 'X') && ((a[4]) == '\0') )
@@ -571,12 +695,12 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
     {
       goto no_pdx_file;
     }
- 
-//#ifdef DEBUG
+
+#ifdef DEBUG
 
     printf("PDX File : %s\n", buf);
 
-//#endif // DEBUG
+#endif // DEBUG
 
     pdx=_open_pdx( buf );
     if ( NULL != pdx )
@@ -588,6 +712,40 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
   {
     goto get_pdx_file;
   }
+
+#if defined __GNUC__
+  if (NULL == pdx)
+  {
+    buf[0] = '\0';
+    strncpy( buf, mdxpath, PATH_BUF_SIZE-1 );
+    if ( (a=strrchr( buf, '/' )) != NULL )
+    {
+      *(a+1)='\0';
+    }
+    else
+    {
+      buf[0] = '.';
+      buf[1] = '/';
+      buf[2] = 0;
+    }
+    if (0 == find_in_folder(pdx_iconv_name, buf))
+    {
+      pdx=_open_pdx( buf );
+      if ( NULL != pdx )
+      {
+
+//#ifdef DEBUG
+
+        printf("PDX File : %s (%s) \n", buf, pdx_iconv_name);
+
+//#endif // DEBUG
+
+        goto get_pdx_file;
+      }
+    }
+  }
+
+#endif // defined __GNUC__
 
   if (NULL == pdx)
   {
@@ -614,23 +772,26 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
     {
       if ( ((toupper(a[1])) == 'P') && ((toupper(a[2])) == 'D') && ((toupper(a[3])) == 'X') && ((a[4]) == '\0') )
       {
+        a[1] = 'P';
+        a[2] = 'D';
+        a[3] = 'X';
         strcat( buf, pdx_iconv_name );
       }
     }
     else
     {
+      strcat( pdx_iconv_name, ".PDX" );
       strcat( buf, pdx_iconv_name );
-      strcat( buf, ".PDX" );
     }
 
 //#ifdef DEBUG
 
+    printf("PDX File : %s\n", pdx_iconv_name);
     printf("PDX File : %s\n", buf);
 
 //#endif // DEBUG
 
     pdx=_open_pdx( buf );
-
     if ( NULL != pdx )
     {
       goto get_pdx_file;
@@ -648,7 +809,7 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
       {
           goto no_pdx_file;
       }
- 
+
 //#ifdef DEBUG
 
       printf("PDX File : %s\n", buf);
@@ -660,16 +821,47 @@ _get_pdx(MDX_DATA* mdx, char* mdxpath)
       {
           goto get_pdx_file;
       }
-      else
-      {
-          goto no_pdx_file;
-      }
     }
   }
   else
   {
     goto get_pdx_file;
   }
+
+#if defined __GNUC__
+  if (NULL == pdx)
+  {
+    buf[0] = '\0';
+    // specified pdx directory
+    strcpy( buf, mdx->pdx_dir );
+    if ( (a=strrchr( buf, '/' )) != NULL )
+    {
+      *(a+1)='\0';
+    }
+    else
+    {
+      buf[0] = '.';
+      buf[1] = '/';
+      buf[2] = 0;
+    }
+    if (0 == find_in_folder(pdx_iconv_name, buf))
+    {
+      pdx=_open_pdx( buf );
+      if ( NULL != pdx )
+      {
+
+//#ifdef DEBUG
+
+        printf("PDX File %s found : %s\n", pdx_iconv_name, buf);
+
+//#endif // DEBUG
+
+        goto get_pdx_file;
+      }
+    }
+  }
+
+#endif // defined __GNUC__
 
   no_pdx_file:
     goto unget_pdx_file;
