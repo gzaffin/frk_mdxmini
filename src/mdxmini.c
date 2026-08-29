@@ -182,12 +182,12 @@ int find_in_folder(char * fileString, char * folderString) {
         chk_result = compare_utf8_code_point_by_code_point(s1, s2);
 
         if (chk_result == 0) {
-            int s2_len = 0;
-            while ('\0' != s2[s2_len])
+            int folderString_len = 0;
+            while ('\0' != folderString[folderString_len])
             {
-                s2_len++;
+                folderString_len++;
             }
-            strncat( folderString, s2, PATH_BUF_SIZE-(s2_len+1) );
+            strncat( folderString, s2, PATH_BUF_SIZE-(folderString_len+1) );
 #ifdef DEBUG
             printf("String %s (%s) matches %s .\n", s2, folderString, s1);
 
